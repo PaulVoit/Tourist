@@ -1,5 +1,6 @@
 package ru.jo4j.tourist;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
 import androidx.fragment.app.FragmentActivity;
@@ -11,11 +12,14 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationManager;
 import android.location.LocationListener;
+import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 
 
+import com.google.android.gms.common.api.Status;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
@@ -23,6 +27,12 @@ import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.libraries.places.api.Places;
+import com.google.android.libraries.places.api.model.Place;
+import com.google.android.libraries.places.widget.AutocompleteSupportFragment;
+import com.google.android.libraries.places.widget.listener.PlaceSelectionListener;
+
+import java.util.Arrays;
+import java.util.Objects;
 
 import ru.jo4j.tourist.database.SQLStore;
 import ru.jo4j.tourist.model.Mark;
@@ -61,6 +71,9 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         current.setOnClickListener(this::getCurrentLocation);
         Button list = findViewById(R.id.list);
         list.setOnClickListener(this::showMarkList);
+        if (isMapPermissionGranted()) {
+            initMap();
+        }
     }
 
     public void getCurrentLocation(View view) {
@@ -75,6 +88,34 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
             map.moveCamera(CameraUpdateFactory.newLatLngZoom(coordinates, 15));
             mStore.addMark(new Mark(latitude, longitude, title));
         }
+    }
+
+    private boolean isMapPermissionGranted() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                    || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION}, 1);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        if (requestCode == 1 &&
+                grantResults.length > 0 &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED &&
+                grantResults[1] == PackageManager.PERMISSION_GRANTED) {
+            initMap();
+        }
+    }
+
+    private void initMap() {
+        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.map);
+        mapFragment.getMapAsync(this);
     }
 
     private void setAllMarks() {
@@ -127,6 +168,29 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
             // for ActivityCompat#requestPermissions for more details.
             return;
         }
-        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0, loc);
+        Objects.requireNonNull(locationManager)
+                .requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0, loc);
+        Places.initialize(this, getString(R.string.google_maps_key));
+        AutocompleteSupportFragment search = (AutocompleteSupportFragment)
+                getSupportFragmentManager().findFragmentById(R.id.autocomplete_fragment);
+        if (search != null) {
+            search.setPlaceFields(Arrays.asList(Place.Field.ID, Place.Field.NAME, Place.Field.LAT_LNG));
+        }
+        if (search != null) {
+            search.setOnPlaceSelectedListener(new PlaceSelectionListener() {
+                @Override
+                public void onPlaceSelected(@NonNull Place place) {
+                    LatLng pos = place.getLatLng();
+                    MarkerOptions marker = new MarkerOptions().position(pos).title("Hello Maps");
+                    map.addMarker(marker);
+                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(pos, 15));
+                }
+
+                @Override
+                public void onError(@NonNull Status status) {
+                    Log.i("MainActivity", "An error occurred: " + status);
+                }
+            });
+        }
     }
 }
